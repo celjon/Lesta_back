@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>О проекте - TF-IDF Анализатор</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <div class="container py-5">
+        <header class="mb-5">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1>О проекте</h1>
+                <a href="/" class="btn btn-outline-primary">Вернуться на главную</a>
+            </div>
+        </header>
+
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h2 class="mb-4">Что такое TF-IDF?</h2>
+
+                        <p><strong>TF-IDF</strong> (Term Frequency-Inverse Document Frequency) — это статистическая мера, используемая для оценки важности слова в контексте документа, являющегося частью коллекции документов.</p>
+
+                        <h3 class="mt-4">Компоненты TF-IDF:</h3>
+
+                        <div class="mb-4">
+                            <h4>1. TF (Term Frequency) - Частота термина</h4>
+                            <p>Показывает, как часто определенное слово встречается в документе. Чем выше частота, тем важнее слово для этого документа.</p>
+
+                            <div class="bg-light p-3 rounded">
+                                <p class="mb-0"><strong>Формула:</strong> TF = (Количество вхождений слова в документе) / (Общее количество слов в документе)</p>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h4>2. IDF (Inverse Document Frequency) - Обратная частота документа</h4>
+                            <p>Показывает, насколько уникально или редко слово в коллекции документов. Слова, которые редко встречаются в коллекции, имеют высокий IDF.</p>
+
+                            <div class="bg-light p-3 rounded">
+                                <p class="mb-0"><strong>Формула:</strong> IDF = log(Общее количество документов / Количество документов, содержащих слово)</p>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h4>3. TF-IDF</h4>
+                            <p>Является произведением TF и IDF и служит числовой статистикой, отражающей важность слова для документа в контексте коллекции.</p>
+
+                            <div class="bg-light p-3 rounded">
+                                <p class="mb-0"><strong>Формула:</strong> TF-IDF = TF × IDF</p>
+                            </div>
+                        </div>
+
+                        <h3 class="mt-4">Практическое применение TF-IDF:</h3>
+                        <ul>
+                            <li>Поисковые системы — для ранжирования релевантности документа к запросу</li>
+                            <li>Классификация текстов — для выделения ключевых особенностей документов</li>
+                            <li>Автоматическое реферирование — для выбора наиболее значимых предложений</li>
+                            <li>Рекомендательные системы — для анализа сходства документов</li>
+                        </ul>
+
+                        <h3 class="mt-4">О нашем анализаторе:</h3>
+                        <p>Этот инструмент позволяет загрузить текстовый файл и выполнить анализ TF-IDF для слов в нем. Анализатор предварительно обрабатывает текст, удаляя стоп-слова и знаки пунктуации, затем рассчитывает значения TF, IDF и TF-IDF для каждого слова.</p>
+
+                        <p>Результаты сортируются по убыванию значения IDF, показывая наиболее уникальные и информативные слова в тексте.</p>
+
+                        <div class="mt-5 text-center">
+                            <p class="text-muted">© 2025 TF-IDF Анализатор | <a href="https://github.com/yourusername/text-analyzer" target="_blank">GitHub</a></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

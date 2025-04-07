@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализатор текста - TF-IDF</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <div class="container py-5">
+        <header class="text-center mb-5">
+            <h1>Анализатор текста - TF-IDF</h1>
+            <p class="lead">Загрузите текстовый файл для анализа частоты слов</p>
+        </header>
+
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow">
+                    <div class="card-body">
+                        {% if error %}
+                        <div class="alert alert-danger">
+                            {{ error }}
+                        </div>
+                        {% endif %}
+
+                        <form action="/upload/" method="post" enctype="multipart/form-data" class="mb-4">
+                            <div class="mb-3">
+                                <label for="file" class="form-label">Выберите текстовый файл</label>
+                                <input type="file" class="form-control" id="file" name="file" required>
+                                <div class="form-text">Поддерживаемые форматы: .txt, .csv</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="items_per_page" class="form-label">Количество слов на странице</label>
+                                <select class="form-select" id="items_per_page" name="items_per_page">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50" selected>50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+
+                            <input type="hidden" name="page" value="1">
+                            <input type="hidden" name="remove_stopwords" value="true">
+                            <input type="hidden" name="case_sensitive" value="false">
+                            <input type="hidden" name="min_word_length" value="2">
+                            <input type="hidden" name="language" value="auto">
+                            <input type="hidden" name="session_id" value=""
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg">Загрузить и анализировать</button>
+                            </div>
+                        </form>
+
+                        <div class="text-center">
+                            <div class="mb-3">
+                                <a href="/advanced/" class="btn btn-outline-secondary">Расширенные настройки</a>
+                            </div>
+                            <a href="/about/" class="link-secondary">О проекте и TF-IDF</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Особенности -->
+        <div class="row mt-5">
+            <div class="col-12 text-center mb-4">
+                <h2>Возможности анализатора</h2>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h3 class="h5 card-title">Анализ текста</h3>
+                        <p class="card-text">Подробный анализ частоты слов с использованием метрики TF-IDF для выявления наиболее важных терминов.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h3 class="h5 card-title">Визуализация данных</h3>
+                        <p class="card-text">Наглядное представление результатов в виде графиков и облака слов для быстрого анализа.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h3 class="h5 card-title">Гибкая настройка</h3>
+                        <p class="card-text">Возможность настройки параметров анализа: удаление стоп-слов, учет регистра, языковые опции.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h3 class="h5 card-title">Статистика текста</h3>
+                        <p class="card-text">Подробная статистика читабельности текста, включая количество слов, предложений и различные метрики.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h3 class="h5 card-title">Многоязычная поддержка</h3>
+                        <p class="card-text">Анализ текстов на русском и английском языках с возможностью автоматического определения языка.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h3 class="h5 card-title">Экспорт результатов</h3>
+                        <p class="card-text">Возможность экспорта полученных результатов в CSV-формат для дальнейшего использования.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-light py-4 mt-5">
+        <div class="container text-center">
+            <p class="mb-0">© 2025 TF-IDF Анализатор | <a href="https://github.com/yourusername/text-analyzer" target="_blank">GitHub</a></p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', path='/js/script.js') }}"></script>
+</body>
+</html>

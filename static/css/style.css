@@ -1,0 +1,68 @@
+/* Основные стили для приложения */
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.container {
+    max-width: 1200px;
+}
+
+/* Стили для карточек */
+.card {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Стили для таблицы */
+.table th {
+    font-weight: 600;
+}
+
+/* Стили для пагинации */
+.pagination .page-link {
+    color: #007bff;
+    border-radius: 4px;
+    margin: 0 2px;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+/* Анимации и переходы */
+.btn, .page-link {
+    transition: all 0.2s ease-in-out;
+}
+
+.btn:hover, .page-link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Стили для графика */
+.chart-container {
+    margin-top: 20px;
+}
+
+/* Адаптивные стили для мобильных устройств */
+@media (max-width: 768px) {
+    .d-flex.justify-content-between {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .pagination {
+        font-size: 0.85rem;
+    }
+
+    .chart-container {
+        height: 300px !important;
+    }
+}

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результаты анализа - TF-IDF</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <div class="container py-5">
+        <header class="mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1>Результаты анализа TF-IDF</h1>
+                <a href="/" class="btn btn-outline-primary">Новый анализ</a>
+            </div>
+            <p class="lead">Файл: {{ filename }}</p>
+        </header>
+
+        <!-- Карточки со статистикой -->
+        <div class="row mb-4">
+            <div class="col-md-3 mb-3">
+                <div class="card text-center h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Всего слов</h5>
+                        <p class="display-4">{{ total_words }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card text-center h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Уникальных слов</h5>
+                        <p class="display-4">{{ unique_words }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card text-center h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Язык</h5>
+                        <p class="display-4">{{ "RU" if language == "russian" or language == "ru" else "EN" if language == "english" or language == "en" else "JA" if language == "ja" else "MIX" }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card text-center h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Средняя длина слова</h5>
+                        <p class="display-4">{{ readability_stats.avg_word_length }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вкладки с результатами анализа -->
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <ul class="nav nav-tabs card-header-tabs" id="resultTabs">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="table-tab" onclick="showTab('table')">Таблица TF-IDF</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="charts-tab" onclick="showTab('charts')">Визуализация</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="stats-tab" onclick="showTab('stats')">Статистика</button>
+                    </li>
+                    <li class="nav-item ms-auto">
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-secondary" id="exportBtn">Экспорт в CSV</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="exportExcelBtn">Экспорт в Excel</button>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="tab-content" id="resultTabsContent">
+                    <!-- Вкладка с таблицей -->
+                    <div class="tab-pane fade show active" id="table">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Слово</th>
+                                        <th>TF (частота)</th>
+                                        <th>IDF</th>
+                                        <th>TF-IDF</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in words_data %}
+                                    <tr>
+                                        <td>{{ loop.index + (current_page - 1) * items_per_page }}</td>
+                                        <td>{{ item.word }}</td>
+                                        <td>{{ item.tf }}</td>
+                                        <td>{{ "%.4f"|format(item.idf) }}</td>
+                                        <td>{{ "%.4f"|format(item.tfidf) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Пагинация -->
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                Страница {{ current_page }} из {{ total_pages }}
+                            </div>
+                            <nav aria-label="Навигация по страницам">
+                                <ul class="pagination mb-0">
+                                    {% if current_page > 1 %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="/page/1?session_id={{ session_id }}&items_per_page={{ items_per_page }}">Первая</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="/page/{{ current_page - 1 }}?session_id={{ session_id }}&items_per_page={{ items_per_page }}">Предыдущая</a>
+                                    </li>
+                                    {% else %}
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#">Первая</a>
+                                    </li>
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#">Предыдущая</a>
+                                    </li>
+                                    {% endif %}
+
+                                    {% if total_pages <= 5 %}
+                                        {% for i in range(1, total_pages + 1) %}
+                                        <li class="page-item {% if i == current_page %}active{% endif %}">
+                                            <a class="page-link" href="/page/{{ i }}?session_id={{ session_id }}&items_per_page={{ items_per_page }}">{{ i }}</a>
+                                        </li>
+                                        {% endfor %}
+                                    {% else %}
+                                        {% set start = [current_page - 2, 1] | max %}
+                                        {% set end = [start + 4, total_pages + 1] | min %}
+                                        {% set start = [end - 5, 1] | max %}
+
+                                        {% for i in range(start, end) %}
+                                        <li class="page-item {% if i == current_page %}active{% endif %}">
+                                            <a class="page-link" href="/page/{{ i }}?session_id={{ session_id }}&items_per_page={{ items_per_page }}">{{ i }}</a>
+                                        </li>
+                                        {% endfor %}
+                                    {% endif %}
+
+                                    {% if current_page < total_pages %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="/page/{{ current_page + 1 }}?session_id={{ session_id }}&items_per_page={{ items_per_page }}">Следующая</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="/page/{{ total_pages }}?session_id={{ session_id }}&items_per_page={{ items_per_page }}">Последняя</a>
+                                    </li>
+                                    {% else %}
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#">Следующая</a>
+                                    </li>
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#">Последняя</a>
+                                    </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка с визуализацией -->
+                    <div class="tab-pane fade" id="charts">
+                        <div class="row">
+                            <!-- График TF-IDF -->
+                            <div class="col-12 mb-4">
+                                <h4>Сравнение TF и IDF для топ-20 слов</h4>
+                                <div class="chart-container" style="position: relative; height:400px;">
+                                    <canvas id="tfidfChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Облако слов, если доступно -->
+                            {% if wordcloud_image %}
+                            <div class="col-12 mb-4">
+                                <h4>Облако слов</h4>
+                                <div class="text-center">
+                                    <img src="data:image/png;base64,{{ wordcloud_image }}" class="img-fluid" alt="Облако слов">
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Вкладка со статистикой -->
+                    <div class="tab-pane fade" id="stats">
+                        <div class="row">
+                            <!-- Общая статистика -->
+                            <div class="col-md-6 mb-4">
+                                <h4>Общая статистика</h4>
+                                <table class="table table-bordered">
+                                    <tbody>
+                                        <tr>
+                                            <th>Всего слов</th>
+                                            <td>{{ total_words }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Уникальных слов</th>
+                                            <td>{{ unique_words }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Количество предложений</th>
+                                            <td>{{ readability_stats.sentence_count }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Количество символов</th>
+                                            <td>{{ readability_stats.char_count }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Средняя длина предложения</th>
+                                            <td>{{ readability_stats.avg_sentence_length }} слов</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Средняя длина слова</th>
+                                            <td>{{ readability_stats.avg_word_length }} символов</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Статистика читабельности -->
+                            <div class="col-md-6 mb-4">
+                                <h4>Статистика читабельности</h4>
+                                <table class="table table-bordered">
+                                    <tbody>
+                                        <tr>
+                                            <th>Основной язык</th>
+                                            <td>
+                                                {% if language == "russian" or language == "ru" %}
+                                                    Русский
+                                                {% elif language == "english" or language == "en" %}
+                                                    Английский
+                                                {% elif language == "ja" %}
+                                                    Японский
+                                                {% else %}
+                                                    Смешанный
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th>Распределение языков</th>
+                                            <td>
+                                                {% for lang, percent in language_distribution.items() %}
+                                                    {% if lang == "ru" %}Русский{% elif lang == "en" %}Английский{% elif lang == "ja" %}Японский{% else %}{{ lang }}{% endif %}: {{ percent }}%<br>
+                                                {% endfor %}
+                                            </td>
+                                        </tr>
+                                        {% if readability_stats.flesch_reading_ease is not none %}
+                                        <tr>
+                                            <th>Индекс Флеша (легкость чтения)</th>
+                                            <td>{{ readability_stats.flesch_reading_ease }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Уровень Флеша-Кинкейда</th>
+                                            <td>{{ readability_stats.flesch_kincaid_grade }}</td>
+                                        </tr>
+                                        {% endif %}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Параметры анализа -->
+                            <div class="col-12 mb-4">
+                                <h4>Параметры анализа</h4>
+                                <table class="table table-bordered">
+                                    <tbody>
+                                        <tr>
+                                            <th>Удаление стоп-слов</th>
+                                            <td>{{ "Да" if analysis_options.remove_stopwords else "Нет" }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Учет регистра</th>
+                                            <td>{{ "Да" if analysis_options.case_sensitive else "Нет" }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Минимальная длина слова</th>
+                                            <td>{{ analysis_options.min_word_length }} символов</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Язык для стоп-слов</th>
+                                            <td>
+                                                {% if analysis_options.language == "russian" or analysis_options.language == "ru" %}
+                                                    Русский
+                                                {% elif analysis_options.language == "english" or analysis_options.language == "en" %}
+                                                    Английский
+                                                {% elif analysis_options.language == "auto" %}
+                                                    Автоопределение
+                                                {% else %}
+                                                    {{ analysis_options.language }}
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Скрытое поле для хранения идентификатора сессии -->
+    <input type="hidden" id="sessionIdField" value="{{ session_id }}">
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Функция для переключения вкладок
+        function showTab(tabId) {
+            // Скрыть все вкладки
+            document.querySelectorAll('.tab-pane').forEach(function(tab) {
+                tab.classList.remove('show', 'active');
+            });
+
+            // Убрать активный класс со всех кнопок
+            document.querySelectorAll('.nav-link').forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+
+            // Показать выбранную вкладку
+            document.getElementById(tabId).classList.add('show', 'active');
+
+            // Активировать выбранную кнопку
+            document.getElementById(tabId + '-tab').classList.add('active');
+
+            // Вывести в консоль для отладки
+            console.log('Switching to tab:', tabId);
+        }
+
+        // Данные для графика
+        const wordsData = [
+            {% for item in words_data[:20] %}
+                {
+                    word: "{{ item.word }}",
+                    tf: {{ item.tf }},
+                    idf: {{ item.idf }},
+                    tfidf: {{ item.tfidf }}
+                }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+
+        // Создание графика
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('tfidfChart').getContext('2d');
+
+            // Подготовка данных для графика
+            const labels = wordsData.map(item => item.word);
+            const tfData = wordsData.map(item => item.tf);
+            const idfData = wordsData.map(item => item.idf);
+            const tfidfData = wordsData.map(item => item.tfidf);
+
+            const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'TF (частота)',
+                            data: tfData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'IDF',
+                            data: idfData,
+                            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'TF-IDF',
+                            data: tfidfData,
+                            backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Функция экспорта в CSV
+            document.getElementById('exportBtn').addEventListener('click', function() {
+                // Параметры для запроса
+                const params = new URLSearchParams({
+                    filename: "{{ filename }}",
+                    session_id: "{{ session_id }}"
+                });
+
+                // Создаем ссылку для скачивания
+                window.location.href = `/download-csv/?${params.toString()}`;
+            });
+
+            // Функция экспорта в Excel
+            document.getElementById('exportExcelBtn').addEventListener('click', function() {
+                // Параметры для запроса
+                const params = new URLSearchParams({
+                    filename: "{{ filename }}",
+                    session_id: "{{ session_id }}"
+                });
+
+                // Создаем ссылку для скачивания
+                window.location.href = `/download-excel/?${params.toString()}`;
+            });
+        });
+
+        // Для удобства отладки
+        console.log("Session ID: {{ session_id }}");
+        console.log("Current Page: {{ current_page }}");
+        console.log("Total Pages: {{ total_pages }}");
+    </script>
+</body>
+</html>
