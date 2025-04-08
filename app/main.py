@@ -7,13 +7,13 @@ from pathlib import Path
 import tempfile
 import shutil
 import uvicorn
-from typing import Optional
+from typing import Optional, List
 import json
 import uuid
 from datetime import datetime, timedelta
 
 from app.models import AnalysisOptions, PaginationParams
-from app.text_processing import process_text_file, calculate_tfidf_sklearn
+from app.text_processing import process_multiple_files, calculate_tfidf_sklearn
 from app.utils import detect_language, detect_languages_distribution, get_readability_stats
 from app.utils import generate_wordcloud_image, generate_tfidf_chart, export_to_csv, export_to_excel
 
@@ -54,7 +54,7 @@ async def index(request: Request):
 @app.post("/upload/")
 async def upload_file(
         request: Request,
-        file: UploadFile = File(None),
+        files: List[UploadFile] = File(...),
         page: int = Form(1),
         items_per_page: int = Form(50),
         remove_stopwords: bool = Form(True),
@@ -63,55 +63,65 @@ async def upload_file(
         language: str = Form("auto"),
         session_id: str = Form(None)
 ):
-    """Обработка загруженного файла и отображение результатов"""
+    """Обработка загруженных файлов и отображение результатов"""
     # Проверяем наличие сессии
     if session_id and session_id in RESULTS_CACHE:
         # Используем кэшированные данные
         cache_data = RESULTS_CACHE[session_id]
         words_data = cache_data['data']
-        filename = cache_data['filename']
+        filenames = cache_data['filenames']
         language_distribution = cache_data['language_distribution']
         readability_stats = cache_data['readability_stats']
         language = cache_data['language']
+        document_count = cache_data['document_count']
         wordcloud_image = cache_data.get('wordcloud_image')
         tfidf_chart = cache_data.get('tfidf_chart')
 
         # Обновляем время жизни кэша
         RESULTS_CACHE[session_id]['expires'] = datetime.now() + timedelta(minutes=CACHE_EXPIRY)
     else:
-        # Создаем новую сессию при загрузке файла
-        if not file:
+        # Создаем новую сессию при загрузке файлов
+        if not files or len(files) == 0:
             return templates.TemplateResponse(
                 "index.html",
-                {"request": request, "error": "Файл не выбран"}
+                {"request": request, "error": "Файлы не выбраны"}
             )
 
-        if not file.filename.endswith(('.txt', '.csv')):
-            return templates.TemplateResponse(
-                "index.html",
-                {"request": request, "error": "Пожалуйста, загрузите текстовый файл (.txt или .csv)"}
-            )
+        # Проверяем типы файлов
+        for file in files:
+            if not file.filename.endswith(('.txt', '.csv')):
+                return templates.TemplateResponse(
+                    "index.html",
+                    {"request": request, "error": "Пожалуйста, загрузите только текстовые файлы (.txt или .csv)"}
+                )
 
-        # Сохраняем временный файл
-        temp_file_path = os.path.join(TEMP_DIR, file.filename)
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Сохраняем временные файлы
+        temp_files = []
+        filenames = []
+        for file in files:
+            temp_file_path = os.path.join(TEMP_DIR, file.filename)
+            with open(temp_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            temp_files.append(temp_file_path)
+            filenames.append(file.filename)
 
         try:
-            # Читаем содержимое файла для определения языка
-            with open(temp_file_path, 'r', encoding='utf-8') as f:
-                file_content = f.read()
-
             # Определяем язык, если указан "auto"
+            file_contents = []
+            for temp_file in temp_files:
+                with open(temp_file, 'r', encoding='utf-8') as f:
+                    file_contents.append(f.read())
+
             if language == "auto":
-                detected_lang, confidence = detect_language(file_content)
+                # Используем первый файл для определения языка
+                detected_lang, confidence = detect_language(file_contents[0])
                 language = detected_lang
 
-            # Получаем распределение языков
-            language_distribution = detect_languages_distribution(file_content)
+            # Получаем распределение языков для первого файла
+            language_distribution = detect_languages_distribution(file_contents[0])
 
-            # Получаем статистику читабельности
-            readability_stats = get_readability_stats(file_content)
+            # Получаем статистику читабельности для первого файла
+            readability_stats = get_readability_stats(file_contents[0])
 
             # Создаем параметры анализа
             analysis_options = AnalysisOptions(
@@ -121,14 +131,17 @@ async def upload_file(
                 language=language
             )
 
-            # Обрабатываем файл и получаем результаты TF-IDF
-            words_data = process_text_file(
-                temp_file_path,
+            # Обрабатываем файлы и получаем результаты TF-IDF
+            words_data = process_multiple_files(
+                temp_files,
                 remove_stopwords=remove_stopwords,
                 case_sensitive=case_sensitive,
                 min_word_length=min_word_length,
                 language=language
             )
+
+            # Количество обработанных документов
+            document_count = len(temp_files)
 
             # Генерируем облако слов (если доступно)
             wordcloud_image = generate_wordcloud_image(words_data)
@@ -140,26 +153,26 @@ async def upload_file(
             session_id = str(uuid.uuid4())
             RESULTS_CACHE[session_id] = {
                 'data': words_data,
-                'filename': file.filename,
+                'filenames': filenames,
                 'language': language,
                 'language_distribution': language_distribution,
                 'readability_stats': readability_stats,
+                'document_count': document_count,
                 'wordcloud_image': wordcloud_image,
                 'tfidf_chart': tfidf_chart,
                 'expires': datetime.now() + timedelta(minutes=CACHE_EXPIRY)
             }
 
-            filename = file.filename
-
         except Exception as e:
             return templates.TemplateResponse(
                 "index.html",
-                {"request": request, "error": f"Ошибка при обработке файла: {str(e)}"}
+                {"request": request, "error": f"Ошибка при обработке файлов: {str(e)}"}
             )
         finally:
-            # Удаляем временный файл
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
+            # Удаляем временные файлы
+            for temp_file in temp_files:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
 
     # Очистка устаревших данных
     clean_expired_cache()
@@ -183,12 +196,17 @@ async def upload_file(
     unique_words = len(words_data)
     total_words = sum(item['tf'] for item in words_data)
 
+    # Используем имя первого файла для отображения или создаем составное имя
+    display_filename = filenames[0] if len(filenames) == 1 else f"{len(filenames)} файлов"
+
     return templates.TemplateResponse(
         "results.html",
         {
             "request": request,
             "words_data": current_page_data,
-            "filename": filename,
+            "filename": display_filename,
+            "filenames": filenames,
+            "document_count": document_count,
             "current_page": page,
             "total_pages": total_pages,
             "items_per_page": items_per_page,
@@ -248,12 +266,18 @@ async def get_page(
     unique_words = len(words_data)
     total_words = sum(item['tf'] for item in words_data)
 
+    # Используем имя первого файла или составное имя
+    filenames = cache_data['filenames']
+    display_filename = filenames[0] if len(filenames) == 1 else f"{len(filenames)} файлов"
+
     return templates.TemplateResponse(
         "results.html",
         {
             "request": request,
             "words_data": current_page_data,
-            "filename": cache_data['filename'],
+            "filename": display_filename,
+            "filenames": filenames,
+            "document_count": cache_data['document_count'],
             "current_page": page,
             "total_pages": total_pages,
             "items_per_page": items_per_page,

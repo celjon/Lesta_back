@@ -25,9 +25,10 @@
                         <form action="/upload/" method="post" enctype="multipart/form-data">
                             <div class="mb-4">
                                 <h5>Загрузка файла</h5>
-                                <div class="mb-3">
-                                    <label for="file" class="form-label">Выберите текстовый файл</label>
-                                    <input type="file" class="form-control" id="file" name="file" required>
+                               <div class="mb-3">
+                                    <label for="file" class="form-label">Выберите текстовые файлы</label>
+                                    <!-- Добавляем атрибут multiple -->
+                                    <input type="file" class="form-control" id="file" name="file" multiple required>
                                     <div class="form-text">Поддерживаемые форматы: .txt, .csv</div>
                                 </div>
                             </div>

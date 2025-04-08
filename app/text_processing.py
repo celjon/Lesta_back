@@ -7,6 +7,7 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
+from typing import List
 
 # Загрузка необходимых ресурсов NLTK
 try:
@@ -69,7 +70,7 @@ def calculate_idf(word, documents_list):
     Расчет IDF (обратная частота документа) для слова.
     IDF = log(Общее количество документов / Количество документов, содержащих слово)
     """
-    # Для одного документа можно разделить его на части, например, на абзацы
+    # Теперь documents_list - это список документов (токенизированных)
     doc_count = sum(1 for doc in documents_list if word in doc)
     if doc_count == 0:
         return 0
@@ -79,6 +80,7 @@ def calculate_idf(word, documents_list):
 def process_text_file(file_path, remove_stopwords=True, case_sensitive=False, min_word_length=2, language="russian"):
     """
     Обработка текстового файла и расчет TF-IDF для всех слов.
+    УСТАРЕВШАЯ ФУНКЦИЯ - используйте process_multiple_files вместо неё
     """
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
@@ -131,17 +133,91 @@ def process_text_file(file_path, remove_stopwords=True, case_sensitive=False, mi
     return word_stats
 
 
-def calculate_tfidf_sklearn(file_path, remove_stopwords=True, min_word_length=2, language="russian"):
+def process_multiple_files(file_paths, remove_stopwords=True, case_sensitive=False, min_word_length=2,
+                           language="russian"):
     """
-    Альтернативный метод расчета TF-IDF с использованием sklearn.
-    """
-    with open(file_path, 'r', encoding='utf-8') as file:
-        text = file.read()
+    Обработка нескольких текстовых файлов и расчет TF-IDF.
 
-    # Разделение текста на "документы"
-    documents = [para.strip() for para in re.split(r'\n\s*\n', text) if para.strip()]
-    if len(documents) <= 1:
-        documents = [sent.strip() for sent in sent_tokenize(text) if sent.strip()]
+    Args:
+        file_paths: список путей к файлам
+        remove_stopwords: удалять ли стоп-слова
+        case_sensitive: учитывать ли регистр
+        min_word_length: минимальная длина слова
+        language: язык для стоп-слов
+
+    Returns:
+        list: список словарей с данными о словах (word, tf, idf, tfidf)
+    """
+    documents = []
+    document_tokens = []
+
+    # Читаем и обрабатываем каждый файл как отдельный документ
+    for file_path in file_paths:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            text = file.read()
+
+        # Предобработка текста документа
+        tokens = preprocess_text(
+            text,
+            remove_stopwords=remove_stopwords,
+            case_sensitive=case_sensitive,
+            min_word_length=min_word_length,
+            language=language
+        )
+
+        documents.append(text)
+        document_tokens.append(tokens)
+
+    # Собираем все уникальные слова из всех документов
+    all_tokens = [token for doc_tokens in document_tokens for token in doc_tokens]
+    all_words = set(all_tokens)
+
+    # Подсчет частоты слов во всей коллекции (для TF)
+    word_counts = Counter(all_tokens)
+
+    # Подсчет TF и IDF для каждого слова
+    word_stats = []
+
+    for word in all_words:
+        # TF - частота слова во всей коллекции
+        tf = word_counts[word]
+
+        # IDF - обратная частота документа
+        # Считаем, в скольких документах встречается слово
+        doc_count = sum(1 for doc_tokens in document_tokens if word in doc_tokens)
+
+        # Формула IDF: log(N/df), где N - общее число документов, df - количество документов со словом
+        # Добавляем проверку, чтобы избежать деления на ноль
+        if doc_count > 0:
+            idf = math.log(len(documents) / doc_count)
+        else:
+            idf = 0
+
+        tfidf = tf * idf
+
+        word_stats.append({
+            'word': word,
+            'tf': tf,
+            'idf': idf,
+            'tfidf': tfidf
+        })
+
+    # Сортировка по убыванию IDF
+    word_stats = sorted(word_stats, key=lambda x: x['idf'], reverse=True)
+
+    return word_stats
+
+
+def calculate_tfidf_sklearn(file_paths, remove_stopwords=True, min_word_length=2, language="russian"):
+    """
+    Альтернативный метод расчета TF-IDF с использованием sklearn для нескольких файлов.
+    """
+    documents = []
+
+    # Читаем каждый файл как отдельный документ
+    for file_path in file_paths:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            documents.append(file.read())
 
     # Подготовка стоп-слов
     stop_words = None
@@ -163,49 +239,52 @@ def calculate_tfidf_sklearn(file_path, remove_stopwords=True, min_word_length=2,
         token_pattern=token_pattern
     )
 
-    # Применяем векторизатор к нашим документам
+    # Применяем векторизатор к документам
     tfidf_matrix = vectorizer.fit_transform(documents)
 
     # Получаем имена функций (слова)
     feature_names = vectorizer.get_feature_names_out()
 
-    # Создаем DataFrame для хранения результатов
-    results = []
-
-    # Получаем средние значения TF-IDF для каждого слова по всем документам
-    tfidf_means = tfidf_matrix.mean(axis=0).A1
-
-    # Получаем document frequency для расчета IDF
+    # Создаем DataFrame
     df = pd.DataFrame(
         tfidf_matrix.toarray(),
         columns=feature_names
-    ).astype(bool).sum(axis=0)
-
-    # Расчет IDF
-    idf = pd.Series(
-        {term: math.log(len(documents) / (df[term])) for term in feature_names}
     )
 
-    # Считаем общую частоту слов в зависимости от настроек регистра
-    term_counts = Counter()
-    for doc in documents:
-        if language == "russian" or language == "ru":
-            pattern = rf'\b[а-яА-Я]{{{min_word_length},}}\b'
-        elif language == "english" or language == "en":
-            pattern = rf'\b[a-zA-Z]{{{min_word_length},}}\b'
-        else:  # auto или другие
-            pattern = rf'\b[а-яА-Яa-zA-Z]{{{min_word_length},}}\b'
+    # Рассчитываем средние значения TF-IDF для каждого слова
+    tfidf_means = df.mean(axis=0)
 
-        words = re.findall(pattern, doc.lower())
-        term_counts.update(words)
+    # Получаем document frequency для расчета IDF
+    df_counts = df.astype(bool).sum(axis=0)
 
+    # Рассчитываем IDF
+    idfs = {
+        term: math.log(len(documents) / df_counts[term])
+        for term in feature_names
+    }
+
+    # Считаем общую частоту слов
+    all_text = " ".join(documents)
+
+    if language == "russian" or language == "ru":
+        pattern = rf'\b[а-яА-Я]{{{min_word_length},}}\b'
+    elif language == "english" or language == "en":
+        pattern = rf'\b[a-zA-Z]{{{min_word_length},}}\b'
+    else:  # auto или другие
+        pattern = rf'\b[а-яА-Яa-zA-Z]{{{min_word_length},}}\b'
+
+    words = re.findall(pattern, all_text.lower())
+    term_counts = Counter(words)
+
+    # Формируем результаты
+    results = []
     for term in feature_names:
         if term in term_counts:
             results.append({
                 'word': term,
                 'tf': term_counts[term],
-                'idf': idf[term],
-                'tfidf': term_counts[term] * idf[term]
+                'idf': idfs[term],
+                'tfidf': term_counts[term] * idfs[term]
             })
 
     # Сортировка по убыванию IDF

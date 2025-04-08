@@ -28,7 +28,7 @@ class WordData(BaseModel):
 
 class TextAnalysisResult(BaseModel):
     """Результаты анализа текста"""
-    filename: str
+    filenames: List[str]
     total_words: int
     unique_words: int
     top_words: List[WordData]

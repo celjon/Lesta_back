@@ -26,11 +26,11 @@
 
                         <form action="/upload/" method="post" enctype="multipart/form-data" class="mb-4">
                             <div class="mb-3">
-                                <label for="file" class="form-label">Выберите текстовый файл</label>
-                                <input type="file" class="form-control" id="file" name="file" required>
-                                <div class="form-text">Поддерживаемые форматы: .txt, .csv</div>
+                                  <label for="file" class="form-label">Выберите текстовые файлы</label>
+                                    <!-- Добавляем атрибут multiple -->
+                                    <input type="file" class="form-control" id="file" name="file" multiple required>
+                                    <div class="form-text">Поддерживаемые форматы: .txt, .csv</div>
                             </div>
-
                             <div class="mb-3">
                                 <label for="items_per_page" class="form-label">Количество слов на странице</label>
                                 <select class="form-select" id="items_per_page" name="items_per_page">
