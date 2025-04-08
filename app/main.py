@@ -2,21 +2,29 @@ from fastapi import FastAPI, Request, File, UploadFile, Form, Depends, HTTPExcep
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi import status
 import os
 from pathlib import Path
 import tempfile
 import shutil
 import uvicorn
-from typing import Optional, List
-import json
+from typing import Optional, List, Union
 import uuid
 from datetime import datetime, timedelta
 
 from app.models import AnalysisOptions, PaginationParams
-from app.text_processing import process_multiple_files, calculate_tfidf_sklearn
-from app.utils import detect_language, detect_languages_distribution, get_readability_stats
-from app.utils import generate_wordcloud_image, generate_tfidf_chart, export_to_csv, export_to_excel
+from app.text_processing import process_multiple_files
+from app.utils import (
+    detect_language,
+    detect_languages_distribution,
+    get_readability_stats,
+    generate_wordcloud_image,
+    generate_tfidf_chart,
+    export_to_csv,
+    export_to_excel
+)
 
+# Создание основного приложения FastAPI
 app = FastAPI(title="Анализатор текста - TF-IDF")
 
 # Настройка шаблонов и статических файлов
@@ -24,11 +32,11 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR.parent / "static")), name="static")
 
-# Для хранения обработанных файлов и результатов
-TEMP_DIR = tempfile.gettempdir()
+# Временная директория для загрузки файлов
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "tfidf_analyzer")
+os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Кэш для хранения результатов анализа
-# {session_id: {data: [...], expires: datetime}}
 RESULTS_CACHE = {}
 
 # Время хранения кэша (в минутах)
@@ -57,176 +65,167 @@ async def upload_file(
         files: List[UploadFile] = File(...),
         page: int = Form(1),
         items_per_page: int = Form(50),
-        remove_stopwords: bool = Form(True),
-        case_sensitive: bool = Form(False),
-        min_word_length: int = Form(2),
+        remove_stopwords: Union[bool, str] = Form(True),
+        case_sensitive: Union[bool, str] = Form(False),
+        min_word_length: Union[int, str] = Form(2),
         language: str = Form("auto"),
-        session_id: str = Form(None)
+        session_id: Optional[str] = Form(None)
 ):
+    # Проверка наличия файлов
+    if not files or len(files) == 0:
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error": "Файлы не выбраны"}
+        )
+
+    # Проверка расширений файлов
+    valid_extensions = ('.txt', '.csv')
+
+    # Проверка типов файлов
+    invalid_files = [f for f in files if not f.filename.lower().endswith(valid_extensions)]
+
+    if invalid_files:
+        # Если есть файлы с неверным расширением, возвращаем ошибку
+        raise HTTPException(
+            status_code=422,
+            detail=f"Недопустимый формат файлов: {', '.join(f.filename for f in invalid_files)}. Используйте .txt или .csv"
+        )
+
     """Обработка загруженных файлов и отображение результатов"""
-    # Проверяем наличие сессии
-    if session_id and session_id in RESULTS_CACHE:
-        # Используем кэшированные данные
-        cache_data = RESULTS_CACHE[session_id]
-        words_data = cache_data['data']
-        filenames = cache_data['filenames']
-        language_distribution = cache_data['language_distribution']
-        readability_stats = cache_data['readability_stats']
-        language = cache_data['language']
-        document_count = cache_data['document_count']
-        wordcloud_image = cache_data.get('wordcloud_image')
-        tfidf_chart = cache_data.get('tfidf_chart')
+    # Преобразование типов для безопасности
+    try:
+        remove_stopwords = remove_stopwords if isinstance(remove_stopwords,
+                                                          bool) else remove_stopwords.lower() == 'true'
+        case_sensitive = case_sensitive if isinstance(case_sensitive, bool) else case_sensitive.lower() == 'true'
+        min_word_length = int(min_word_length)
+    except (ValueError, TypeError):
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error": "Некорректные параметры анализа"}
+        )
 
-        # Обновляем время жизни кэша
-        RESULTS_CACHE[session_id]['expires'] = datetime.now() + timedelta(minutes=CACHE_EXPIRY)
-    else:
-        # Создаем новую сессию при загрузке файлов
-        if not files or len(files) == 0:
-            return templates.TemplateResponse(
-                "index.html",
-                {"request": request, "error": "Файлы не выбраны"}
-            )
-
-        # Проверяем типы файлов
-        for file in files:
-            if not file.filename.endswith(('.txt', '.csv')):
-                return templates.TemplateResponse(
-                    "index.html",
-                    {"request": request, "error": "Пожалуйста, загрузите только текстовые файлы (.txt или .csv)"}
-                )
-
-        # Сохраняем временные файлы
+    try:
+        # Сохранение временных файлов
         temp_files = []
+        file_contents = []
         filenames = []
+
         for file in files:
-            temp_file_path = os.path.join(TEMP_DIR, file.filename)
-            with open(temp_file_path, "wb") as buffer:
+            # Генерация уникального имени файла
+            unique_filename = f"{uuid.uuid4()}_{file.filename}"
+            temp_path = os.path.join(TEMP_DIR, unique_filename)
+
+            # Сохранение файла
+            with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            temp_files.append(temp_file_path)
+
+            # Чтение содержимого для последующего анализа
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                file_contents.append(content)
+
+            temp_files.append(temp_path)
             filenames.append(file.filename)
 
-        try:
-            # Определяем язык, если указан "auto"
-            file_contents = []
-            for temp_file in temp_files:
-                with open(temp_file, 'r', encoding='utf-8') as f:
-                    file_contents.append(f.read())
+        # Определение языка
+        if language == "auto":
+            # Используем первый файл для определения языка
+            detected_lang, _ = detect_language(file_contents[0])
+            language = detected_lang
 
-            if language == "auto":
-                # Используем первый файл для определения языка
-                detected_lang, confidence = detect_language(file_contents[0])
-                language = detected_lang
+        # Получение статистики первого файла
+        language_distribution = detect_languages_distribution(file_contents[0])
+        readability_stats = get_readability_stats(file_contents[0])
 
-            # Получаем распределение языков для первого файла
-            language_distribution = detect_languages_distribution(file_contents[0])
+        # Параметры анализа
+        analysis_options = AnalysisOptions(
+            remove_stopwords=remove_stopwords,
+            case_sensitive=case_sensitive,
+            min_word_length=min_word_length,
+            language=language
+        )
 
-            # Получаем статистику читабельности для первого файла
-            readability_stats = get_readability_stats(file_contents[0])
+        # Обработка файлов и расчет TF-IDF
+        words_data = process_multiple_files(
+            temp_files,
+            remove_stopwords=remove_stopwords,
+            case_sensitive=case_sensitive,
+            min_word_length=min_word_length,
+            language=language
+        )
 
-            # Создаем параметры анализа
-            analysis_options = AnalysisOptions(
-                remove_stopwords=remove_stopwords,
-                case_sensitive=case_sensitive,
-                min_word_length=min_word_length,
-                language=language
-            )
+        # Визуализация
+        wordcloud_image = generate_wordcloud_image(words_data)
+        tfidf_chart = generate_tfidf_chart(words_data)
 
-            # Обрабатываем файлы и получаем результаты TF-IDF
-            words_data = process_multiple_files(
-                temp_files,
-                remove_stopwords=remove_stopwords,
-                case_sensitive=case_sensitive,
-                min_word_length=min_word_length,
-                language=language
-            )
+        # Создание уникальной сессии
+        session_id = str(uuid.uuid4())
 
-            # Количество обработанных документов
-            document_count = len(temp_files)
-
-            # Генерируем облако слов (если доступно)
-            wordcloud_image = generate_wordcloud_image(words_data)
-
-            # Генерируем график TF-IDF
-            tfidf_chart = generate_tfidf_chart(words_data)
-
-            # Сохраняем в кэш
-            session_id = str(uuid.uuid4())
-            RESULTS_CACHE[session_id] = {
-                'data': words_data,
-                'filenames': filenames,
-                'language': language,
-                'language_distribution': language_distribution,
-                'readability_stats': readability_stats,
-                'document_count': document_count,
-                'wordcloud_image': wordcloud_image,
-                'tfidf_chart': tfidf_chart,
-                'expires': datetime.now() + timedelta(minutes=CACHE_EXPIRY)
-            }
-
-        except Exception as e:
-            return templates.TemplateResponse(
-                "index.html",
-                {"request": request, "error": f"Ошибка при обработке файлов: {str(e)}"}
-            )
-        finally:
-            # Удаляем временные файлы
-            for temp_file in temp_files:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-
-    # Очистка устаревших данных
-    clean_expired_cache()
-
-    # Расчет для пагинации
-    total_items = len(words_data)
-    total_pages = (total_items + items_per_page - 1) // items_per_page
-
-    # Проверка корректности номера страницы
-    if page < 1:
-        page = 1
-    elif page > total_pages and total_pages > 0:
-        page = total_pages
-
-    # Получаем данные для текущей страницы
-    start_idx = (page - 1) * items_per_page
-    end_idx = min(start_idx + items_per_page, total_items)
-    current_page_data = words_data[start_idx:end_idx]
-
-    # Базовая статистика
-    unique_words = len(words_data)
-    total_words = sum(item['tf'] for item in words_data)
-
-    # Используем имя первого файла для отображения или создаем составное имя
-    display_filename = filenames[0] if len(filenames) == 1 else f"{len(filenames)} файлов"
-
-    return templates.TemplateResponse(
-        "results.html",
-        {
-            "request": request,
-            "words_data": current_page_data,
-            "filename": display_filename,
-            "filenames": filenames,
-            "document_count": document_count,
-            "current_page": page,
-            "total_pages": total_pages,
-            "items_per_page": items_per_page,
-            "total_items": total_items,
-            "unique_words": unique_words,
-            "total_words": total_words,
-            "language": language,
-            "language_distribution": language_distribution,
-            "readability_stats": readability_stats,
-            "wordcloud_image": wordcloud_image,
-            "tfidf_chart": tfidf_chart,
-            "session_id": session_id,
-            "analysis_options": {
-                "remove_stopwords": remove_stopwords,
-                "case_sensitive": case_sensitive,
-                "min_word_length": min_word_length,
-                "language": language
-            }
+        # Кэширование результатов
+        RESULTS_CACHE[session_id] = {
+            'data': words_data,
+            'filenames': filenames,
+            'language': language,
+            'language_distribution': language_distribution,
+            'readability_stats': readability_stats,
+            'document_count': len(temp_files),
+            'wordcloud_image': wordcloud_image,
+            'tfidf_chart': tfidf_chart,
+            'analysis_options': analysis_options.model_dump(),  # Изменено на model_dump()
+            'expires': datetime.now() + timedelta(minutes=CACHE_EXPIRY)
         }
-    )
+
+        # Очистка временных файлов
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+
+        # Пагинация результатов
+        total_items = len(words_data)
+        total_pages = (total_items + items_per_page - 1) // items_per_page
+
+        # Корректировка номера страницы
+        page = max(1, min(page, total_pages))
+
+        start_idx = (page - 1) * items_per_page
+        end_idx = min(start_idx + items_per_page, total_items)
+        current_page_data = words_data[start_idx:end_idx]
+
+        # Возврат результатов
+        return templates.TemplateResponse(
+            "results.html",
+            {
+                "request": request,
+                "words_data": current_page_data,
+                "filename": ", ".join(filenames) if len(filenames) > 1 else filenames[0],
+                "filenames": filenames,
+                "document_count": len(temp_files),
+                "current_page": page,
+                "total_pages": total_pages,
+                "items_per_page": items_per_page,
+                "total_items": total_items,
+                "unique_words": len(words_data),
+                "total_words": sum(item['tf'] for item in words_data),
+                "language": language,
+                "language_distribution": language_distribution,
+                "readability_stats": readability_stats,
+                "wordcloud_image": wordcloud_image,
+                "tfidf_chart": tfidf_chart,
+                "session_id": session_id,
+                "analysis_options": analysis_options.model_dump()  # Изменено на model_dump()
+            }
+        )
+
+    except Exception as e:
+        # Обработка непредвиденных ошибок с подробным логированием
+        import traceback
+        print(f"Ошибка при загрузке файлов: {str(e)}")
+        traceback.print_exc()
+
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error": f"Ошибка при обработке файлов: {str(e)}"}
+        )
 
 
 @app.get("/page/{page}")
@@ -290,12 +289,7 @@ async def get_page(
             "wordcloud_image": cache_data.get('wordcloud_image'),
             "tfidf_chart": cache_data.get('tfidf_chart'),
             "session_id": session_id,
-            "analysis_options": {
-                "remove_stopwords": True,  # Заглушка, в кэше нет этих данных
-                "case_sensitive": False,
-                "min_word_length": 2,
-                "language": cache_data['language']
-            }
+            "analysis_options": cache_data.get('analysis_options', {})
         }
     )
 

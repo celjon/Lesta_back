@@ -1,27 +1,36 @@
 import os
 import re
-import tempfile
+import math
+import base64
+from io import BytesIO
+from typing import Dict, List, Optional, Tuple
+
+import matplotlib
+
+matplotlib.use('Agg')  # Используем backend без GUI
+
+import nltk
 import pandas as pd
 import matplotlib.pyplot as plt
-from io import BytesIO
-import base64
-from collections import Counter
-from nltk.corpus import stopwords
-from nltk.tokenize import sent_tokenize
-import nltk
 
-# Загрузка необходимых ресурсов NLTK
+# Загрузка ресурсов NLTK
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
 
 
-def detect_language(text):
+def detect_language(text: str) -> Tuple[str, float]:
     """
-    Определяет язык текста
+    Определяет основной язык текста с учетом процентного соотношения символов.
+
+    Args:
+        text (str): Текст для анализа
+
+    Returns:
+        Кортеж (язык, доля символов)
     """
-    # Более точная эвристика для определения языка
+    # Подсчет символов разных алфавитов
     russian_chars = len(re.findall(r'[а-яА-Я]', text))
     english_chars = len(re.findall(r'[a-zA-Z]', text))
     japanese_chars = len(re.findall(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]', text))
@@ -29,8 +38,9 @@ def detect_language(text):
     total_chars = russian_chars + english_chars + japanese_chars
 
     if total_chars == 0:
-        return "unknown", 0
+        return "unknown", 0.0
 
+    # Определение доминирующего языка
     if japanese_chars > 0 and japanese_chars / total_chars > 0.3:
         return "ja", japanese_chars / total_chars
     elif russian_chars > english_chars:
@@ -39,40 +49,43 @@ def detect_language(text):
         return "en", english_chars / total_chars
 
 
-def detect_languages_distribution(text):
+def detect_languages_distribution(text: str) -> Dict[str, float]:
     """
-    Определяет распределение языков в тексте по абзацам
+    Анализирует распределение языков в тексте по абзацам.
+
+    Args:
+        text (str): Текст для анализа
+
+    Returns:
+        Словарь с процентным распределением языков
     """
     # Разделение на абзацы
     paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
 
-    # Анализ языка каждого абзаца
-    language_counts = Counter()
+    # Подсчет языков
+    language_counts = {}
     total_paragraphs = len(paragraphs)
 
     for paragraph in paragraphs:
         lang, _ = detect_language(paragraph)
-        language_counts[lang] += 1
+        language_counts[lang] = language_counts.get(lang, 0) + 1
 
     # Расчет процентного соотношения
-    language_distribution = {}
-    for lang, count in language_counts.items():
-        language_distribution[lang] = round(count / total_paragraphs * 100, 2)
+    return {
+        lang: round(count / total_paragraphs * 100, 2)
+        for lang, count in language_counts.items()
+    }
 
-    return language_distribution
 
-
-def count_sentences(text):
+def count_syllables_en(word: str) -> int:
     """
-    Подсчитывает количество предложений в тексте
-    """
-    sentences = sent_tokenize(text)
-    return len(sentences)
+    Приблизительный подсчет слогов в английском слове.
 
+    Args:
+        word (str): Слово для подсчета слогов
 
-def count_syllables_en(word):
-    """
-    Подсчет слогов в английском слове (приблизительно)
+    Returns:
+        Количество слогов
     """
     word = word.lower()
     if len(word) <= 3:
@@ -84,38 +97,40 @@ def count_syllables_en(word):
 
     # Подсчет гласных как приближение к слогам
     vowels = "aeiouy"
-    count = 0
-    prev_is_vowel = False
-
-    for char in word:
-        is_vowel = char in vowels
-        if is_vowel and not prev_is_vowel:
-            count += 1
-        prev_is_vowel = is_vowel
-
-    return max(1, count)
+    return max(1, sum(
+        1 for i in range(1, len(word))
+        if word[i] in vowels and word[i - 1] not in vowels
+    ))
 
 
-def get_readability_stats(text):
+def get_readability_stats(text: str) -> Dict[str, Optional[float]]:
     """
-    Рассчитывает статистику читабельности текста
+    Расчет статистики читабельности текста.
+
+    Args:
+        text (str): Текст для анализа
+
+    Returns:
+        Словарь со статистическими показателями
     """
     # Подсчет слов, предложений, символов
-    sentences = sent_tokenize(text)
+    import nltk
+    sentences = nltk.sent_tokenize(text)
     words = text.split()
 
     sentence_count = len(sentences)
     word_count = len(words)
     char_count = len(text)
 
-    # Средняя длина предложения в словах
+    # Расчет средних значений
     avg_sentence_length = word_count / sentence_count if sentence_count > 0 else 0
-
-    # Средняя длина слова в символах
     avg_word_length = sum(len(word) for word in words) / word_count if word_count > 0 else 0
 
-    # Расчет индекса Флеша-Кинкейда (для английского языка)
+    # Расчет индекса Флеша-Кинкейда (только для английского)
     lang, _ = detect_language(text)
+    flesch_reading_ease = None
+    flesch_kincaid_grade = None
+
     if lang == 'en':
         syllable_count = sum(count_syllables_en(word) for word in words)
         if sentence_count > 0 and word_count > 0:
@@ -139,12 +154,45 @@ def get_readability_stats(text):
     }
 
 
-def generate_wordcloud_image(words_data, max_words=100):
+def generate_base64_image(plt_figure: plt.Figure, format: str = 'png') -> Optional[str]:
     """
-    Создает изображение облака слов на основе данных TF-IDF
+    Преобразует matplotlib figure в base64 изображение.
+
+    Args:
+        plt_figure (plt.Figure): Matplotlib фигура
+        format (str): Формат изображения
+
+    Returns:
+        Base64 закодированное изображение или None
     """
     try:
-        import matplotlib.pyplot as plt
+        # Сохраняем изображение в буфер
+        img_buffer = BytesIO()
+        plt_figure.savefig(img_buffer, format=format)
+        img_buffer.seek(0)
+
+        # Кодируем изображение в base64
+        encoded_img = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        plt.close(plt_figure)
+
+        return encoded_img
+    except Exception as e:
+        print(f"Ошибка при создании изображения: {e}")
+        return None
+
+
+def generate_wordcloud_image(words_data: List[Dict], max_words: int = 100) -> Optional[str]:
+    """
+    Создает изображение облака слов на основе данных TF-IDF.
+
+    Args:
+        words_data (List[Dict]): Данные о словах
+        max_words (int): Максимальное количество слов
+
+    Returns:
+        Base64 закодированное изображение или None
+    """
+    try:
         from wordcloud import WordCloud
 
         # Создаем словарь {слово: частота}
@@ -160,33 +208,31 @@ def generate_wordcloud_image(words_data, max_words=100):
             contour_color='steelblue'
         ).generate_from_frequencies(word_freq)
 
-        # Создаем изображение
+        # Создаем и сохраняем изображение
         plt.figure(figsize=(10, 5))
         plt.imshow(wordcloud, interpolation='bilinear')
         plt.axis('off')
 
-        # Сохраняем изображение в буфер
-        img_buffer = BytesIO()
-        plt.savefig(img_buffer, format='png')
-        img_buffer.seek(0)
-
-        # Кодируем изображение в base64 для отображения на странице
-        encoded_img = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
-        plt.close()
-
-        return encoded_img
+        return generate_base64_image(plt.gcf())
     except ImportError:
+        print("WordCloud библиотека не установлена")
         return None
 
 
-def generate_tfidf_chart(words_data, top_n=20):
+def generate_tfidf_chart(words_data: List[Dict], top_n: int = 20) -> Optional[str]:
     """
-    Создает график сравнения TF и IDF для топ-N слов
+    Создает график сравнения TF и IDF для топ-N слов.
+
+    Args:
+        words_data (List[Dict]): Данные о словах
+        top_n (int): Количество слов для визуализации
+
+    Returns:
+        Base64 закодированное изображение или None
     """
     try:
+        # Подготовка данных
         data = words_data[:top_n]
-
-        # Создаем DataFrame из данных
         df = pd.DataFrame([
             {
                 'word': item['word'],
@@ -196,95 +242,112 @@ def generate_tfidf_chart(words_data, top_n=20):
             } for item in data
         ])
 
-        # Создаем график
+        # Создание графика
         plt.figure(figsize=(12, 6))
-
-        # Строим бар-график с двойной осью Y
         ax1 = plt.subplot(111)
         bar_width = 0.35
 
         # TF на левой оси
-        bars1 = ax1.bar(df.index - bar_width / 2, df['tf'], bar_width, label='TF', color='skyblue')
+        ax1.bar(df.index - bar_width / 2, df['tf'], bar_width, label='TF', color='skyblue')
         ax1.set_xlabel('Слова')
         ax1.set_ylabel('TF (частота)', color='steelblue')
         ax1.tick_params(axis='y', labelcolor='steelblue')
 
         # IDF на правой оси
         ax2 = ax1.twinx()
-        bars2 = ax2.bar(df.index + bar_width / 2, df['idf'], bar_width, label='IDF', color='lightcoral')
+        ax2.bar(df.index + bar_width / 2, df['idf'], bar_width, label='IDF', color='lightcoral')
         ax2.set_ylabel('IDF', color='firebrick')
         ax2.tick_params(axis='y', labelcolor='firebrick')
 
-        # Настройка оси X
+        # Настройка осей
         ax1.set_xticks(df.index)
         ax1.set_xticklabels(df['word'], rotation=45, ha='right')
 
-        # Добавляем легенду
+        # Легенда
         ax1.legend(loc='upper left')
         ax2.legend(loc='upper right')
 
         plt.title('Сравнение TF и IDF для топ слов')
         plt.tight_layout()
 
-        # Сохраняем изображение в буфер
-        img_buffer = BytesIO()
-        plt.savefig(img_buffer, format='png')
-        img_buffer.seek(0)
-
-        # Кодируем изображение в base64 для отображения на странице
-        encoded_img = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
-        plt.close()
-
-        return encoded_img
+        return generate_base64_image(plt.gcf())
     except Exception as e:
-        print(f"Ошибка при создании графика: {str(e)}")
+        print(f"Ошибка при создании графика: {e}")
         return None
 
 
-def export_to_csv(words_data, filename="tfidf_results.csv"):
+def export_to_csv(words_data: List[Dict], filename: str = "tfidf_results.csv") -> str:
     """
-    Экспортирует результаты анализа в CSV файл
+    Экспортирует результаты анализа в CSV файл.
+
+    Args:
+        words_data (List[Dict]): Данные о словах
+        filename (str): Имя файла для экспорта
+
+    Returns:
+        Путь к созданному CSV файлу
     """
+    # Создаем DataFrame с корректными столбцами
     df = pd.DataFrame([
         {
-            'word': item['word'],
-            'tf': item['tf'],
-            'idf': item['idf'],
-            'tfidf': item['tfidf']
+            'Слово': item['word'],
+            'TF (частота)': item['tf'],
+            'IDF': item['idf'],
+            'TF-IDF': item['tfidf']
         } for item in words_data
     ])
 
     # Создаем временный файл
-    temp_file = os.path.join(tempfile.gettempdir(), filename)
+    temp_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'downloads', filename)
 
-    # Экспортируем с корректными заголовками и разделителями
-    # Используем точку с запятой как разделитель (стандарт для европейских/русских Excel)
-    df.to_csv(temp_file, index=False, encoding='utf-8-sig', sep=';',
-              header=['Слово', 'TF (частота)', 'IDF', 'TF-IDF'])
+    # Создаем директорию, если она не существует
+    os.makedirs(os.path.dirname(temp_file), exist_ok=True)
+
+    # Экспортируем с корректными параметрами
+    df.to_csv(
+        temp_file,
+        index=False,
+        encoding='utf-8-sig',
+        sep=';',
+        decimal='.',
+        float_format='%.4f'
+    )
 
     return temp_file
 
 
-def export_to_excel(words_data, filename="tfidf_results.xlsx"):
+def export_to_excel(words_data: List[Dict], filename: str = "tfidf_results.xlsx") -> str:
     """
-    Экспортирует результаты анализа в Excel файл
+    Экспортирует результаты анализа в Excel файл.
+
+    Args:
+        words_data (List[Dict]): Данные о словах
+        filename (str): Имя файла для экспорта
+
+    Returns:
+        Путь к созданному Excel файлу
     """
+    # Создаем DataFrame с корректными столбцами
     df = pd.DataFrame([
         {
-            'word': item['word'],
-            'tf': item['tf'],
-            'idf': item['idf'],
-            'tfidf': item['tfidf']
+            'Слово': item['word'],
+            'TF (частота)': item['tf'],
+            'IDF': item['idf'],
+            'TF-IDF': item['tfidf']
         } for item in words_data
     ])
 
-    # Переименовываем столбцы
-    df.columns = ['Слово', 'TF (частота)', 'IDF', 'TF-IDF']
-
     # Создаем временный файл
-    temp_file = os.path.join(tempfile.gettempdir(), filename)
+    temp_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'downloads', filename)
 
-    # Экспортируем как Excel
-    df.to_excel(temp_file, index=False, engine='openpyxl')
+    # Создаем директорию, если она не существует
+    os.makedirs(os.path.dirname(temp_file), exist_ok=True)
+
+    # Экспортируем в Excel
+    df.to_excel(
+        temp_file,
+        index=False,
+        sheet_name='TF-IDF результаты'
+    )
 
     return temp_file

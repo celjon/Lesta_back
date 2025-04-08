@@ -11,7 +11,7 @@
     <div class="container py-5">
         <header class="text-center mb-5">
             <h1>Анализатор текста - TF-IDF</h1>
-            <p class="lead">Загрузите текстовый файл для анализа частоты слов</p>
+            <p class="lead">Загрузите текстовые файлы для анализа частоты слов</p>
         </header>
 
         <div class="row justify-content-center">
@@ -26,11 +26,19 @@
 
                         <form action="/upload/" method="post" enctype="multipart/form-data" class="mb-4">
                             <div class="mb-3">
-                                  <label for="file" class="form-label">Выберите текстовые файлы</label>
-                                    <!-- Добавляем атрибут multiple -->
-                                    <input type="file" class="form-control" id="file" name="file" multiple required>
-                                    <div class="form-text">Поддерживаемые форматы: .txt, .csv</div>
+                                <label for="files" class="form-label">Выберите текстовые файлы</label>
+                                <input
+                                    type="file"
+                                    class="form-control"
+                                    id="files"
+                                    name="files"
+                                    multiple
+                                    accept=".txt,.csv"
+                                    required
+                                >
+                                <div class="form-text">Поддерживаемые форматы: .txt, .csv (до 10 файлов, макс. 5 МБ каждый)</div>
                             </div>
+
                             <div class="mb-3">
                                 <label for="items_per_page" class="form-label">Количество слов на странице</label>
                                 <select class="form-select" id="items_per_page" name="items_per_page">
@@ -41,12 +49,32 @@
                                 </select>
                             </div>
 
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="remove_stopwords" name="remove_stopwords" checked>
+                                <label class="form-check-label" for="remove_stopwords">Удалять стоп-слова</label>
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="case_sensitive" name="case_sensitive">
+                                <label class="form-check-label" for="case_sensitive">Учитывать регистр</label>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="min_word_length" class="form-label">Минимальная длина слова</label>
+                                <input type="number" class="form-control" id="min_word_length" name="min_word_length" value="2" min="1" max="10">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="language" class="form-label">Язык</label>
+                                <select class="form-select" id="language" name="language">
+                                    <option value="auto">Автоопределение</option>
+                                    <option value="russian">Русский</option>
+                                    <option value="english">Английский</option>
+                                </select>
+                            </div>
+
                             <input type="hidden" name="page" value="1">
-                            <input type="hidden" name="remove_stopwords" value="true">
-                            <input type="hidden" name="case_sensitive" value="false">
-                            <input type="hidden" name="min_word_length" value="2">
-                            <input type="hidden" name="language" value="auto">
-                            <input type="hidden" name="session_id" value=""
+                            <input type="hidden" name="session_id" value="">
 
                             <div class="d-grid">
                                 <button type="submit" class="btn btn-primary btn-lg">Загрузить и анализировать</button>
@@ -100,8 +128,8 @@
             <div class="col-md-4 mb-4">
                 <div class="card h-100 shadow-sm">
                     <div class="card-body">
-                        <h3 class="h5 card-title">Статистика текста</h3>
-                        <p class="card-text">Подробная статистика читабельности текста, включая количество слов, предложений и различные метрики.</p>
+                        <h3 class="h5 card-title">Многодокументный анализ</h3>
+                        <p class="card-text">Загрузка нескольких документов для корректного расчета TF-IDF и выявления значимых слов в корпусе текстов.</p>
                     </div>
                 </div>
             </div>
@@ -119,7 +147,7 @@
                 <div class="card h-100 shadow-sm">
                     <div class="card-body">
                         <h3 class="h5 card-title">Экспорт результатов</h3>
-                        <p class="card-text">Возможность экспорта полученных результатов в CSV-формат для дальнейшего использования.</p>
+                        <p class="card-text">Возможность экспорта полученных результатов в CSV и Excel форматы для дальнейшего использования.</p>
                     </div>
                 </div>
             </div>
@@ -128,7 +156,7 @@
 
     <footer class="bg-light py-4 mt-5">
         <div class="container text-center">
-            <p class="mb-0">© 2025 TF-IDF Анализатор | <a href="https://github.com/yourusername/text-analyzer" target="_blank">GitHub</a></p>
+            <p class="mb-0">© 2025 TF-IDF Анализатор | <a href="https://github.com/celjon/Lesta_back" target="_blank">GitHub</a></p>
         </div>
     </footer>
 

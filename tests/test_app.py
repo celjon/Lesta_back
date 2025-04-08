@@ -2,7 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 import tempfile
 import os
-from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')  # Используем backend без GUI
 
 # Импортируем основное приложение
 from app.main import app
@@ -35,20 +36,28 @@ def test_upload_no_file():
 def test_upload_invalid_file_type():
     """Тест загрузки файла неверного типа"""
     # Создаем временный файл с неверным расширением
-    with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp_file:
-        tmp_file.write(b"Test image content")
-        tmp_file.flush()
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
+            tmp_file.write(b"Test image content")
+            tmp_file.flush()
+            tmp_file_path = tmp_file.name
 
-        # Загружаем файл
-        with open(tmp_file.name, "rb") as f:
+        with open(tmp_file_path, "rb") as f:
             response = client.post(
                 "/upload/",
-                files={"file": ("test.jpg", f, "image/jpeg")},
+                files={"files": ("test.jpg", f, "image/jpeg")},
                 data={"page": 1, "items_per_page": 50}
             )
 
-        assert response.status_code == 200
-        assert "Пожалуйста, загрузите текстовый файл" in response.text
+        # Проверяем, что возвращается ошибка 422 Unprocessable Entity
+        assert response.status_code == 422
+
+    finally:
+        # Безопасное удаление файла
+        try:
+            os.unlink(tmp_file_path)
+        except Exception:
+            pass
 
 
 def test_upload_valid_text_file():
@@ -60,20 +69,20 @@ def test_upload_valid_text_file():
     TF-IDF анализатор должен корректно обрабатывать этот тестовый текст.
     """
 
-    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tmp_file:
-        tmp_file.write(test_text.encode('utf-8'))
-        tmp_file.flush()
+    try:
+        # Создаем временный файл с уникальным именем
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tmp_file:
+            tmp_file.write(test_text.encode('utf-8'))
+            tmp_file.flush()
+            tmp_file_path = tmp_file.name
 
         # Загружаем файл
-        with open(tmp_file.name, "rb") as f:
+        with open(tmp_file_path, "rb") as f:
             response = client.post(
                 "/upload/",
-                files={"file": ("test.txt", f, "text/plain")},
+                files={"files": ("test.txt", f, "text/plain")},
                 data={"page": 1, "items_per_page": 50}
             )
-
-        # Удаляем временный файл
-        os.unlink(tmp_file.name)
 
         assert response.status_code == 200
         assert "Результаты анализа TF-IDF" in response.text
@@ -81,6 +90,13 @@ def test_upload_valid_text_file():
         assert "Слово" in response.text
         assert "TF (частота)" in response.text
         assert "IDF" in response.text
+
+    finally:
+        # Безопасное удаление файла
+        try:
+            os.unlink(tmp_file_path)
+        except Exception:
+            pass
 
 
 def test_preprocess_text():
